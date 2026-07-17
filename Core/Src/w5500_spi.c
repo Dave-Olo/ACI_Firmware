@@ -99,8 +99,8 @@ static void W5500IO_Init(void)
 
 void W5500_Init(void)
 {
-    /* 2KB RX/TX buffer per socket (8 sockets, 16KB total each direction). */
-    uint8_t memsize[2][8] = {{2, 2, 2, 2, 2, 2, 2, 2}, {2, 2, 2, 2, 2, 2, 2, 2}};
+    /* 16KB RX/TX for socket 0 (TLS/HTTP), 0 for the rest. */
+    uint8_t memsize[2][8] = {{16, 0, 0, 0, 0, 0, 0, 0}, {16, 0, 0, 0, 0, 0, 0, 0}};
 
     W5500IO_Init();
 
