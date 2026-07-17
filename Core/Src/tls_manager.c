@@ -12,7 +12,7 @@
 #include <string.h>
 
 #define DEFAULT_IP_ADDRESS_BUF_LENGTH 4U
-#define TLS_DEBUG_LEVEL 1
+#define TLS_DEBUG_LEVEL 5
 
 extern SPI_HandleTypeDef hspi1;
 
@@ -34,6 +34,7 @@ static uint16_t pf_len = 0U;
 static void tls_prefetch_drain(int sn)
 {
     uint16_t rsr;
+    int32_t r;
 
     if (pf_len == 0U) {
         pf_off = 0U;
@@ -50,16 +51,11 @@ static void tls_prefetch_drain(int sn)
             rsr = space;
         }
 
-        /* Read directly from the W5500 RX buffer instead of calling the
-         * ioLibrary recv().  recv() checks socket status and calls
-         * close(sn) on any non-ESTABLISHED state, which silently
-         * destroys the socket and causes subsequent reads to return
-         * garbage from a cleared buffer. */
-        wiz_recv_data((uint8_t)sn, &pf_buf[end], rsr);
-        setSn_CR((uint8_t)sn, Sn_CR_RECV);
-        while (getSn_CR((uint8_t)sn));
-
-        pf_len += rsr;
+        r = recv((uint8_t)sn, &pf_buf[end], rsr);
+        if (r <= 0) {
+            break;
+        }
+        pf_len += (uint16_t)r;
     }
 }
 
@@ -77,9 +73,9 @@ static int tls_entropy_cb(void* data, unsigned char* output, size_t len)
 
 static int tls_w5500_recv(void* ctx, unsigned char* buf, size_t len)
 {
+    int32_t ret;
     int sn;
     size_t n;
-    uint8_t sr;
 
     if ((ctx == NULL) || (buf == NULL) || (len == 0U)) {
         return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
@@ -87,24 +83,31 @@ static int tls_w5500_recv(void* ctx, unsigned char* buf, size_t len)
 
     sn = *((int*)ctx);
 
-    /* Drain whatever the chip currently holds into MCU RAM. */
+    /* Vacuum whatever the chip currently holds into MCU RAM. */
     tls_prefetch_drain(sn);
 
     if (pf_len == 0U) {
-        /* Nothing buffered: wait for data without calling the ioLibrary
-         * recv(), which would call close(sn) on any transient socket
-         * status change and silently destroy the connection. */
-        while (getSn_RX_RSR((uint8_t)sn) == 0U) {
-            sr = getSn_SR((uint8_t)sn);
-            if (sr != SOCK_ESTABLISHED && sr != SOCK_CLOSE_WAIT) {
+        /* Nothing buffered: block until at least one byte arrives, reading
+         * directly into the prefetch buffer, then drain trailing segments
+         * (e.g. ServerHelloDone right behind ServerKeyExchange). */
+        ret = recv(sn, pf_buf, (uint16_t)sizeof(pf_buf));
+
+        if (ret <= 0) {
+            if (ret == SOCK_BUSY) {
+                return MBEDTLS_ERR_SSL_WANT_READ;
+            }
+            if (ret == SOCKERR_TIMEOUT) {
+                return MBEDTLS_ERR_SSL_TIMEOUT;
+            }
+            if (ret == SOCKERR_SOCKSTATUS || ret == SOCKERR_SOCKCLOSED) {
                 return MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
             }
+            return (int)ret;
         }
-        tls_prefetch_drain(sn);
 
-        if (pf_len == 0U) {
-            return MBEDTLS_ERR_SSL_WANT_READ;
-        }
+        pf_off = 0U;
+        pf_len = (uint16_t)ret;
+        tls_prefetch_drain(sn);
     }
 
     n = (len < (size_t)pf_len) ? len : (size_t)pf_len;
