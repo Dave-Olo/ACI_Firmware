@@ -67,6 +67,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 // returns -1 in error situation, and number of digits collected in key_buffer otherwise
 WiegandKeyError collect_wiegand_keypress(char* key_buffer, int buffer_size){
+    printf("Waiting for Wiegand keypress...\r\n");
     if(key_buffer == NULL || buffer_size <= 0) {
         printf("ERROR: Invalid buffer provided to collect_wiegand_keypress\r\n");
         return WIEGAND_INVALID_BUFFER; // Invalid buffer
@@ -79,7 +80,7 @@ WiegandKeyError collect_wiegand_keypress(char* key_buffer, int buffer_size){
     while (1){
         if (WiegandData.ready) {
             // Process the Wiegand data
-            uint64_t wiegand_data = WiegandData.bits;
+            uint64_t wiegand_data = WiegandData.bits & 0x0F; // Extract the last 4 bits (the key pressed)
             int bit_count = WiegandData.bit_count;
 
             // Reset for next read
@@ -104,8 +105,8 @@ WiegandKeyError collect_wiegand_keypress(char* key_buffer, int buffer_size){
             if(wiegand_data == CLEAR_KEY_AS_STAR){
                 number_of_key_pressed = 0;
             }
-            printf("Key Pressed: %d\r\n", wiegand_data);
-            key_buffer[number_of_key_pressed - 1] = wiegand_data;
+            printf("Key Pressed: %hu\r\n", (uint8_t)wiegand_data);
+            key_buffer[number_of_key_pressed - 1] = (char)('0' + wiegand_data);
         }
     }
 }

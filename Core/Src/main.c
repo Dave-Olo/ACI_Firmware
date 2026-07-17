@@ -117,32 +117,32 @@ int main(void)
     Wiegand_Init();
     ethernet_init();
     ethernet_connect();
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
   char pin[8] = ""; /* Buffer to hold the collected PIN */
   char json_buffer[256];
   char response_buffer[512];
   int auth_bytes_read;
   static const uint8_t server_ip[4] = SERVER_IP;
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+
 while (1)
   {
-    /* USER CODE END WHILE */
     int access_result = 0;
     do{
     // Wiegand_Process();
 
-      // WiegandKeyError error = collect_wiegand_keypress(pin, sizeof(pin));
-      // if (error == WIEGAND_OK) {
-      //   pin[DIGITS_REQUIRED] = '\0';
-      //   printf("Collected PIN: %s\r\n", pin);
-      // } else {
-      //   printf("error collecting pin: error code: %d\n", (int)error);
-      //   /* USER CODE BEGIN 3 */
-      //   continue;
-      // }
-      snprintf(pin, sizeof(pin), "%s", "112233"); // Simulate a collected PIN for testing
+      WiegandKeyError error = collect_wiegand_keypress(pin, sizeof(pin));
+      if (error == WIEGAND_OK) {
+        pin[DIGITS_REQUIRED] = '\0';
+        printf("Collected PIN: %s\r\n", pin);
+      } else {
+        printf("error collecting pin: error code: %d\n", (int)error);
+        /* USER CODE BEGIN 3 */
+        continue;
+      }
+      //snprintf(pin, sizeof(pin), "%s", "112235"); // Simulate a collected PIN for testing
       int json_error = build_json_from_pin(json_buffer, sizeof(json_buffer), pin, sizeof(pin));
       if (json_error < 0) {
         printf("could not create json payload\n");
@@ -178,6 +178,7 @@ while (1)
     HAL_Delay(3000); /* Delay for 5 seconds before the next iteration */
     /* USER CODE BEGIN 3 */
   }
+   /* USER CODE END WHILE */
   /* USER CODE END 3 */
 }
 
