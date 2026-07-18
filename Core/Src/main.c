@@ -75,10 +75,13 @@ int __io_putchar(int ch) {
 
 static void grant_access(){
 // turn on green LED here and unlock door via relay
+  HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_SET);
 }
 
 static void deny_access(){
 // turn on red LED here
+  HAL_GPIO_WritePin(FAILURE_PIN_GPIO_Port, FAILURE_PIN_Pin, GPIO_PIN_SET);
 }
 /* USER CODE END 0 */
 
@@ -313,9 +316,15 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3|GPIO_PIN_4, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, FAILURE_PIN_Pin|SUCCESS_PIN_Pin|BARRIER_PIN_Pin, GPIO_PIN_RESET);
+
+
 
   /*Configure GPIO pins : D0_Pin D1_Pin */
   GPIO_InitStruct.Pin = D0_Pin|D1_Pin;
