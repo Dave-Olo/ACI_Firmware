@@ -37,8 +37,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* Server IP as a 4-byte array (WIZnet format). Update to match your server. */
-#define SERVER_IP       {192U, 168U, 0U, 176U}
+/* Server address: IP literal (e.g. "192.168.0.176") or hostname (e.g. "api.example.com").
+ * If a hostname is provided, DNS resolution is performed automatically. */
+#define SERVER_ADDR     "192.168.0.176"
 #define SERVER_PORT     8443U
 #define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
 /* USER CODE END PD */
@@ -124,7 +125,6 @@ int main(void)
   char json_buffer[256];
   char response_buffer[512];
   int auth_bytes_read;
-  static const uint8_t server_ip[4] = SERVER_IP;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -156,7 +156,7 @@ while (1)
 
       RemoteServerError auth_err = remote_server_authenticate(
           SERVER_PROTOCOL,
-          (const char*)server_ip, sizeof(server_ip),
+          SERVER_ADDR,
           SERVER_PORT,
           json_buffer, (size_t)json_error,
           response_buffer, sizeof(response_buffer),

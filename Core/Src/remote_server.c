@@ -1,5 +1,6 @@
 #include "remote_server.h"
 #include "tls_manager.h"
+#include "ethernet_manager.h"
 #include "socket.h"
 #include <stdio.h>
 #include <string.h>
@@ -139,10 +140,26 @@ static RemoteServerError https_authenticate(
 
 /* ---------- Public API ---------- */
 
+/* Try to parse "a.b.c.d" into 4 bytes. Returns true if valid IPv4 literal. */
+static bool parse_ipv4(const char* str, uint8_t out[4])
+{
+    unsigned int a, b, c, d;
+    if (sscanf(str, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
+        return false;
+    }
+    if (a > 255 || b > 255 || c > 255 || d > 255) {
+        return false;
+    }
+    out[0] = (uint8_t)a;
+    out[1] = (uint8_t)b;
+    out[2] = (uint8_t)c;
+    out[3] = (uint8_t)d;
+    return true;
+}
+
 RemoteServerError remote_server_authenticate(
     RemoteServerProtocol protocol,
-    const char* server_ip_buff,
-    size_t server_ip_buf_len,
+    const char* server_addr,
     uint16_t server_port,
     const char* json_payload,
     size_t json_payload_len,
@@ -151,27 +168,35 @@ RemoteServerError remote_server_authenticate(
     int* bytes_read)
 {
     unsigned char http_request[HTTP_REQUEST_BUF_SIZE];
-    const uint8_t* ip = (const uint8_t*)server_ip_buff;
+    uint8_t ip[4];
     int header_len;
 
-    if (!server_ip_buff || !json_payload || !response_buff || !bytes_read) {
+    if (!server_addr || !json_payload || !response_buff || !bytes_read) {
         return REMOTE_SERVER_NULL_PTR;
     }
-    if (server_ip_buf_len < 4U || json_payload_len == 0U || response_buff_len == 0U) {
+    if (json_payload_len == 0U || response_buff_len == 0U) {
         return REMOTE_SERVER_INVALID_LENGTH;
     }
 
     *bytes_read = 0;
 
-    /* Build the HTTP/1.1 POST request: header then body in one contiguous buffer. */
+    /* Resolve server address: try IPv4 literal first, then DNS. */
+    if (!parse_ipv4(server_addr, ip)) {
+        if (!ethernet_dns_resolve(server_addr, ip)) {
+            return REMOTE_SERVER_SOCKET_ERROR;
+        }
+    }
+
+    /* Build the HTTP/1.1 POST request. Use the original address string
+     * as the Host header (works for both IP and hostname). */
     header_len = snprintf((char*)http_request, sizeof(http_request),
         "POST " AUTHENTICATE_PATH " HTTP/1.1\r\n"
-        "Host: %u.%u.%u.%u\r\n"
+        "Host: %s\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: %u\r\n"
         "Connection: close\r\n"
         "\r\n",
-        ip[0], ip[1], ip[2], ip[3],
+        server_addr,
         (unsigned int)json_payload_len);
 
     if (header_len < 0 ||
@@ -182,12 +207,12 @@ RemoteServerError remote_server_authenticate(
     memcpy(http_request + header_len, json_payload, json_payload_len);
 
     if (protocol == REMOTE_SERVER_PROTO_HTTPS) {
-        return https_authenticate(ip, server_ip_buf_len, server_port,
+        return https_authenticate(ip, 4U, server_port,
                                   http_request, (size_t)header_len + json_payload_len,
                                   response_buff, response_buff_len, bytes_read);
     }
 
-    return http_authenticate(ip, server_ip_buf_len, server_port,
+    return http_authenticate(ip, 4U, server_port,
                              http_request, (size_t)header_len + json_payload_len,
                              response_buff, response_buff_len, bytes_read);
 }

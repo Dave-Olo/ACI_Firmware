@@ -223,4 +223,23 @@ EthernetManagerError ethernet_connect(){
   DisplayNetworkConfigurations();
   return EthernetManagerOK;
 }
-//EthernetManagerError ethernet_disconnect();
+
+bool ethernet_dns_resolve(const char* hostname, uint8_t ip_out[4])
+{
+    int8_t ret;
+
+    if (!hostname || !ip_out) {
+        return false;
+    }
+
+    /* DNS_run blocks until resolution completes or times out. */
+    ret = DNS_run(dns_ip, (uint8_t*)hostname, ip_out);
+    if (ret == 1) {
+        printf("DNS resolved %s -> %d.%d.%d.%d\r\n",
+               hostname, ip_out[0], ip_out[1], ip_out[2], ip_out[3]);
+        return true;
+    }
+
+    printf("DNS resolution failed for %s\r\n", hostname);
+    return false;
+}
