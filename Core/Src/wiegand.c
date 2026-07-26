@@ -104,7 +104,10 @@ WiegandKeyError collect_wiegand_keypress(char* key_buffer, int buffer_size){
             }
             if(wiegand_data == CLEAR_KEY_AS_STAR){
                 number_of_key_pressed = 0;
+                key_buffer[0] = '\0';
+                printf("\r\n[Buffer Cleared]\r\n");
             }
+
             printf("Key Pressed: %hu\r\n", (uint8_t)wiegand_data);
             key_buffer[number_of_key_pressed - 1] = (char)('0' + wiegand_data);
         }

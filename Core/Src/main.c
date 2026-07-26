@@ -39,7 +39,7 @@
 /* USER CODE BEGIN PD */
 /* Server address: IP literal (e.g. "192.168.0.176") or hostname (e.g. "api.example.com").
  * If a hostname is provided, DNS resolution is performed automatically. */
-#define SERVER_ADDR     "192.168.0.176"
+#define SERVER_ADDR     "192.168.0.102"
 #define SERVER_PORT     8443U
 #define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
 /* USER CODE END PD */
