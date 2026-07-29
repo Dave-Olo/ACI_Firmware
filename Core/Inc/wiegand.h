@@ -1,21 +1,3 @@
-// #ifndef WIEGAND_H
-// #define WIEGAND_H
-
-// #include "main.h"
-
-// #define TIMEOUT_PER_KEY_MS     80
-// #define SEQUENCE_TIMEOUT_MS  8000
-
-// // External variables
-// extern volatile uint64_t rawWiegandData;
-// extern volatile int bitCount;
-// extern volatile unsigned long lastBitTime;
-
-// void Wiegand_Init(void);
-// void Wiegand_Process(void);
-
-// #endif
-
 #ifndef WIEGAND_H
 #define WIEGAND_H
 

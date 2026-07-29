@@ -63,11 +63,11 @@ void Error_Handler(void);
 #define D1_Pin GPIO_PIN_1
 #define D1_GPIO_Port GPIOA
 #define D1_EXTI_IRQn EXTI1_IRQn
-#define FAILURE_PIN_Pin GPIO_PIN_4
+#define FAILURE_PIN_Pin GPIO_PIN_6
 #define FAILURE_PIN_GPIO_Port GPIOB
 #define SUCCESS_PIN_Pin GPIO_PIN_5
 #define SUCCESS_PIN_GPIO_Port GPIOB
-#define BARRIER_PIN_Pin GPIO_PIN_6
+#define BARRIER_PIN_Pin GPIO_PIN_4
 #define BARRIER_PIN_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */

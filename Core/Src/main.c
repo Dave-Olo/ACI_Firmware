@@ -39,7 +39,7 @@
 /* USER CODE BEGIN PD */
 /* Server address: IP literal (e.g. "192.168.0.176") or hostname (e.g. "api.example.com").
  * If a hostname is provided, DNS resolution is performed automatically. */
-#define SERVER_ADDR     "192.168.0.102"
+#define SERVER_ADDR     "192.168.0.103"
 #define SERVER_PORT     8443U
 #define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
 /* USER CODE END PD */
@@ -78,11 +78,18 @@ static void grant_access(){
 // turn on green LED here and unlock door via relay
   HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_SET);
+  printf("\r\n[Access Granted]\r\n");
+  HAL_Delay(5000);
+  HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_RESET);
 }
 
 static void deny_access(){
 // turn on red LED here
   HAL_GPIO_WritePin(FAILURE_PIN_GPIO_Port, FAILURE_PIN_Pin, GPIO_PIN_SET);
+  printf("\r\n[Access Denied]\r\n");
+  HAL_Delay(5000);
+  HAL_GPIO_WritePin(FAILURE_PIN_GPIO_Port, FAILURE_PIN_Pin, GPIO_PIN_RESET);
 }
 /* USER CODE END 0 */
 
@@ -178,8 +185,8 @@ while (1)
       // flash led
     }while (0);
     access_result ? grant_access() : deny_access();
-    HAL_Delay(3000); /* Delay for 5 seconds before the next iteration */
-    /* USER CODE BEGIN 3 */
+    //HAL_Delay(3000); /* Delay for 5 seconds before the next iteration */
+    // /* USER CODE BEGIN 3 */
   }
    /* USER CODE END WHILE */
   /* USER CODE END 3 */
@@ -338,6 +345,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA3 PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
