@@ -7,6 +7,8 @@
 
 /* Authentication endpoint path - change to match server API. */
 #define AUTHENTICATE_PATH      "/authenticate"
+//#define THINGS_BOARD_PATH "/api/v1/7wcW9bj7XnNCzxlGpDGV/telemetry"
+#define THINGS_BOARD_PATH "/api/v1/uddbe2i4Y9pWhWwwntGl/telemetry"
 #define HTTP_REQUEST_BUF_SIZE  1024U
 #define HTTP_SOCKET_NUM        0
 
@@ -157,6 +159,74 @@ static bool parse_ipv4(const char* str, uint8_t out[4])
     return true;
 }
 
+/* Parse HTTP status code from first response line.
+ * Accepts both "HTTP/1.1 200 OK" and minimal "200" / "200 OK" forms. */
+static bool parse_http_status_code(const char* response_buff, size_t response_buff_len, int* status_code)
+{
+    size_t line_end = 0U;
+    size_t i;
+
+    if (!response_buff || !status_code || response_buff_len == 0U) {
+        return false;
+    }
+
+    /* Restrict parsing to first line. */
+    while (line_end < response_buff_len && response_buff[line_end] != '\n' && response_buff[line_end] != '\0') {
+        line_end++;
+    }
+
+    if (line_end == 0U) {
+        return false;
+    }
+
+    /* Try standard HTTP status line: HTTP/<ver> <code> ... */
+    if (line_end >= 5U &&
+        response_buff[0] == 'H' && response_buff[1] == 'T' &&
+        response_buff[2] == 'T' && response_buff[3] == 'P' &&
+        response_buff[4] == '/') {
+
+        i = 5U;
+
+        while (i < line_end && response_buff[i] != ' ' && response_buff[i] != '\t' && response_buff[i] != '\r') {
+            i++;
+        }
+        while (i < line_end && (response_buff[i] == ' ' || response_buff[i] == '\t')) {
+            i++;
+        }
+
+        if (i + 2U < line_end &&
+            response_buff[i] >= '0' && response_buff[i] <= '9' &&
+            response_buff[i + 1U] >= '0' && response_buff[i + 1U] <= '9' &&
+            response_buff[i + 2U] >= '0' && response_buff[i + 2U] <= '9') {
+            *status_code = (int)(response_buff[i] - '0') * 100 +
+                           (int)(response_buff[i + 1U] - '0') * 10 +
+                           (int)(response_buff[i + 2U] - '0');
+            return true;
+        }
+    }
+
+    /* Fallback: first token is status code, e.g. "200" or "200 OK". */
+    i = 0U;
+    while (i < line_end && (response_buff[i] == ' ' || response_buff[i] == '\t' || response_buff[i] == '\r')) {
+        i++;
+    }
+
+    if (i + 2U < line_end &&
+        response_buff[i] >= '0' && response_buff[i] <= '9' &&
+        response_buff[i + 1U] >= '0' && response_buff[i + 1U] <= '9' &&
+        response_buff[i + 2U] >= '0' && response_buff[i + 2U] <= '9') {
+        size_t next = i + 3U;
+        if (next == line_end || response_buff[next] == ' ' || response_buff[next] == '\t' || response_buff[next] == '\r') {
+            *status_code = (int)(response_buff[i] - '0') * 100 +
+                           (int)(response_buff[i + 1U] - '0') * 10 +
+                           (int)(response_buff[i + 2U] - '0');
+            return true;
+        }
+    }
+
+    return false;
+}
+
 RemoteServerError remote_server_authenticate(
     RemoteServerProtocol protocol,
     const char* server_addr,
@@ -217,12 +287,72 @@ RemoteServerError remote_server_authenticate(
                              response_buff, response_buff_len, bytes_read);
 }
 
+
+RemoteServerError remote_server_authenticate_thingsboard(const RemoteServerProtocol protocol, const char* server_addr, uint16_t server_port, const char* json_payload, size_t json_payload_len, char* response_buff, size_t response_buff_len, int* bytes_read){
+ unsigned char http_request[HTTP_REQUEST_BUF_SIZE];
+    uint8_t ip[4];
+    int header_len;
+
+    if (!server_addr || !json_payload || !response_buff || !bytes_read) {
+        return REMOTE_SERVER_NULL_PTR;
+    }
+    if (json_payload_len == 0U || response_buff_len == 0U) {
+        return REMOTE_SERVER_INVALID_LENGTH;
+    }
+
+    *bytes_read = 0;
+
+    /* Resolve server address: try IPv4 literal first, then DNS. */
+    if (!parse_ipv4(server_addr, ip)) {
+        if (!ethernet_dns_resolve(server_addr, ip)) {
+            return REMOTE_SERVER_SOCKET_ERROR;
+        }
+    }
+
+    /* Build the HTTP/1.1 POST request. Use the original address string
+     * as the Host header (works for both IP and hostname). */
+    header_len = snprintf((char*)http_request, sizeof(http_request),
+        "POST " THINGS_BOARD_PATH " HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %u\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        server_addr,
+        (unsigned int)json_payload_len);
+
+    if (header_len < 0 ||
+        (size_t)header_len + json_payload_len >= sizeof(http_request)) {
+        return REMOTE_SERVER_INVALID_LENGTH;
+    }
+
+    memcpy(http_request + header_len, json_payload, json_payload_len);
+    
+    if (protocol == REMOTE_SERVER_PROTO_HTTPS) {
+        return https_authenticate(ip, 4U, server_port,
+                                  http_request, (size_t)header_len + json_payload_len,
+                                  response_buff, response_buff_len, bytes_read);
+    }
+
+    return http_authenticate(ip, 4U, server_port,
+                             http_request, (size_t)header_len + json_payload_len,
+                             response_buff, response_buff_len, bytes_read);
+}
+
 RemoteServerAuthResult remote_server_parse_auth_response(const char* response_buff, size_t response_buff_len){
+    int http_status = 0;
+
     if(!response_buff || response_buff_len == 0){
         return REMOTE_SERVER_AUTH_FAILED;
     }
-    if(strstr(response_buff, "200 OK") != NULL){
+
+    if (!parse_http_status_code(response_buff, response_buff_len, &http_status)) {
+        return REMOTE_SERVER_AUTH_FAILED;
+    }
+
+    if (http_status >= 200 && http_status < 300) {
         return REMOTE_SERVER_AUTH_OK;
     }
+
     return REMOTE_SERVER_AUTH_FAILED;
 }
