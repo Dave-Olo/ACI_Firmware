@@ -11,13 +11,16 @@
             "name": "STM32Cube: Launch ST-Link GDB Server",
             "origin": "snippet",
             "cwd": "${workspaceFolder}",
+            "preLaunchTask": "STM32: Mass Erase",
             "preBuild": "${command:st-stm32-ide-debug-launch.build}",
             "runEntry": "main",
             "imagesAndSymbols": [
                 {
                     "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
                 }
-            ]
+            ],
+            "serverReset": "Hardware reset",
+            "serverInterfaceFrequency": "500"
         }
     ]
 }

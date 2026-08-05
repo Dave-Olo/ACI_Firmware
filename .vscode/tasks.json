@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "STM32: Mass Erase",
+            "type": "shell",
+            "command": "C:\\Users\\USER\\AppData\\Local\\stm32cube\\bundles\\programmer\\2.22.0+st.1\\bin\\STM32_Programmer_CLI.exe",
+            "args": [
+                "-c", "port=SWD", "freq=1000", "mode=UR",
+                "-e", "all"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}
