@@ -39,14 +39,14 @@
 /* USER CODE BEGIN PD */
 /* Server address: IP literal (e.g. "192.168.0.176") or hostname (e.g. "api.example.com").
  * If a hostname is provided, DNS resolution is performed automatically. */
-#define SERVER_ADDR     "192.168.0.103"
+#define SERVER_ADDR     "192.168.0.102"
 //#define THINGS_BOARD_ADDR "http://iot.interswitch.com"
 #define THINGS_BOARD_ADDR "thingsboard.cloud"
-//#define THINGS_BOARD_PORT 8080U
-#define THINGS_BOARD_PORT 80U
+#define THINGS_BOARD_PORT 8080U
+//#define THINGS_BOARD_PORT 80U
 #define SERVER_PORT     8443U
-//#define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
-#define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTP  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
+#define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
+//#define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTP  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
 
 /* USER CODE END PD */
 
@@ -168,21 +168,21 @@ while (1)
       }
       printf("json payload: %s\n", json_buffer);
 
-      // RemoteServerError auth_err = remote_server_authenticate(
-      //     SERVER_PROTOCOL,
-      //     SERVER_ADDR,
-      //     SERVER_PORT,
-      //     json_buffer, (size_t)json_error,
-      //     response_buffer, sizeof(response_buffer),
-      //     &auth_bytes_read);
-
-      RemoteServerError auth_err = remote_server_authenticate_thingsboard(
-        SERVER_PROTOCOL,  
-        THINGS_BOARD_ADDR,
-          THINGS_BOARD_PORT,
+      RemoteServerError auth_err = remote_server_authenticate(
+          SERVER_PROTOCOL,
+          SERVER_ADDR,
+          SERVER_PORT,
           json_buffer, (size_t)json_error,
           response_buffer, sizeof(response_buffer),
           &auth_bytes_read);
+
+      // RemoteServerError auth_err = remote_server_authenticate_thingsboard(
+      //   SERVER_PROTOCOL,  
+      //   THINGS_BOARD_ADDR,
+      //     THINGS_BOARD_PORT,
+      //     json_buffer, (size_t)json_error,
+      //     response_buffer, sizeof(response_buffer),
+      //     &auth_bytes_read);
 
       if (auth_err != REMOTE_SERVER_OK) {
           printf("authentication failed: error code %d\n", (int)auth_err);
