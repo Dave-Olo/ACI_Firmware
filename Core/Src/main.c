@@ -39,10 +39,11 @@
 /* USER CODE BEGIN PD */
 /* Server address: IP literal (e.g. "192.168.0.176") or hostname (e.g. "api.example.com").
  * If a hostname is provided, DNS resolution is performed automatically. */
-#define SERVER_ADDR     "192.168.0.102"
+// #define SERVER_ADDR     "192.168.0.102"
 //#define THINGS_BOARD_ADDR "http://iot.interswitch.com"
-#define THINGS_BOARD_ADDR "thingsboard.cloud"
-#define THINGS_BOARD_PORT 8080U
+#define SERVER_ADDR "https://aci-demo.onrender.com"
+// #define THINGS_BOARD_ADDR "thingsboard.cloud"
+//#define THINGS_BOARD_PORT 8080U
 //#define THINGS_BOARD_PORT 80U
 #define SERVER_PORT     8443U
 #define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
@@ -80,14 +81,38 @@ int __io_putchar(int ch) {
     return ch;
 }
 
-static void grant_access(){
-// turn on green LED here and unlock door via relay
-  HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_SET);
-  printf("\r\n[Access Granted]\r\n");
-  HAL_Delay(5000);
-  HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_RESET);
+static void invalidate_access_code(const char* json_payload, size_t json_payload_len) {
+    if (json_payload != NULL && json_payload_len > 0) {
+        char inv_response[512];
+        int inv_bytes = 0;
+
+        RemoteServerError inv_err = remote_server_invalidate(
+            SERVER_PROTOCOL,
+            SERVER_ADDR,
+            SERVER_PORT,
+            json_payload,
+            json_payload_len,
+            inv_response,
+            sizeof(inv_response),
+            &inv_bytes);
+
+        if (inv_err != REMOTE_SERVER_OK) {
+            printf("Invalidate failed: error %d\r\n", (int)inv_err);
+        } else {
+            printf("Invalidate response (%d bytes): %s\r\n", inv_bytes, inv_response);
+            printf("Access code invalidated successfully\r\n");
+        }
+    }
+}
+static void grant_access(const char* json_payload, size_t json_payload_len)
+{
+    /* 1. Trigger success LED + Barrier */
+    HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_SET);
+    printf("\r\n[Access Granted] - Barrier triggered\r\n");
+    HAL_Delay(5000);
+    HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(BARRIER_PIN_GPIO_Port, BARRIER_PIN_Pin, GPIO_PIN_RESET);
 }
 
 static void deny_access(){
@@ -145,64 +170,69 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
 while (1)
-  {
+{
     int access_result = 0;
-    do{
-    // Wiegand_Process();
+    int json_len = 0;               /* will hold length of JSON payload */
 
-      WiegandKeyError error = collect_wiegand_keypress(pin, sizeof(pin));
-      if (error == WIEGAND_OK) {
-        pin[DIGITS_REQUIRED] = '\0';
-        printf("Collected PIN: %s\r\n", pin);
+    do {
+        WiegandKeyError error = collect_wiegand_keypress(pin, sizeof(pin));
+        if (error == WIEGAND_OK) {
+            pin[DIGITS_REQUIRED] = '\0';
+            printf("Collected PIN: %s\r\n", pin);
+        } else {
+            printf("error collecting pin: error code: %d\n", (int)error);
+            continue;
+        }
+
+        json_len = build_json_from_pin(json_buffer, sizeof(json_buffer), pin, sizeof(pin));
+        if (json_len < 0) {
+            printf("could not create json payload\n");
+            break;
+        }
+        printf("json payload: %s\n", json_buffer);
+
+        /* ---------- Authenticate only ---------- */
+        RemoteServerError auth_err = remote_server_authenticate(
+            SERVER_PROTOCOL,
+            SERVER_ADDR,
+            SERVER_PORT,
+            json_buffer, (size_t)json_len,
+            response_buffer, sizeof(response_buffer),
+            &auth_bytes_read);
+
+        if (auth_err != REMOTE_SERVER_OK) {
+            printf("authentication request failed: error code %d\n", (int)auth_err);
+            break;
+        }
+
+        printf("server response (%d bytes): %s\n", auth_bytes_read, response_buffer);
+
+        RemoteServerAuthResult auth_result = remote_server_parse_auth_response(
+            response_buffer, (size_t)auth_bytes_read);
+
+        if (auth_result != REMOTE_SERVER_AUTH_OK) {
+            printf("authentication failed\n");
+            break;
+        }
+
+        printf("authentication successful\n");
+        access_result = 1;
+
+    } while (0);
+
+    if (access_result) {
+        /* Barrier is triggered inside grant_access(), 
+       and invalidate is called immediately after the barrier pin goes high */
+        grant_access(json_buffer, (size_t)json_len);
+        invalidate_access_code(json_buffer, (size_t)json_len);  /* Invalidate after granting access */
       } else {
-        printf("error collecting pin: error code: %d\n", (int)error);
-        /* USER CODE BEGIN 3 */
-        continue;
-      }
-      //snprintf(pin, sizeof(pin), "%s", "112235"); // Simulate a collected PIN for testing
-      int json_error = build_json_from_pin(json_buffer, sizeof(json_buffer), pin, sizeof(pin));
-      if (json_error < 0) {
-        printf("could not create json payload\n");
-        /* USER CODE BEGIN 3 */
-        break;
-      }
-      printf("json payload: %s\n", json_buffer);
-
-      RemoteServerError auth_err = remote_server_authenticate(
-          SERVER_PROTOCOL,
-          SERVER_ADDR,
-          SERVER_PORT,
-          json_buffer, (size_t)json_error,
-          response_buffer, sizeof(response_buffer),
-          &auth_bytes_read);
-
-      // RemoteServerError auth_err = remote_server_authenticate_thingsboard(
-      //   SERVER_PROTOCOL,  
-      //   THINGS_BOARD_ADDR,
-      //     THINGS_BOARD_PORT,
-      //     json_buffer, (size_t)json_error,
-      //     response_buffer, sizeof(response_buffer),
-      //     &auth_bytes_read);
-
-      if (auth_err != REMOTE_SERVER_OK) {
-          printf("authentication failed: error code %d\n", (int)auth_err);
-          break;
-      } 
-      printf("server response (%d bytes): %s\n", auth_bytes_read, response_buffer);
-      RemoteServerAuthResult auth_result = remote_server_parse_auth_response(response_buffer, (size_t)auth_bytes_read);
-      if (auth_result != REMOTE_SERVER_AUTH_OK) {
-          printf("authentication failed\n");
-          break;
-      }
-      printf("authentication successful\n");
-      access_result = 1; // Indicate successful authentication
-      // open door
-      // flash led
-    }while (0);
-    access_result ? grant_access() : deny_access();
-    //HAL_Delay(3000); /* Delay for 5 seconds before the next iteration */
+        deny_access();
+    }
+}
+HAL_Delay(3000); /* Delay for 5 seconds before the next iteration */
     // /* USER CODE BEGIN 3 */
-  }
+
+
    /* USER CODE END WHILE */
   /* USER CODE END 3 */
 }

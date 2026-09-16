@@ -5,10 +5,14 @@
 #include <stdio.h>
 #include <string.h>
 
+ static bool parse_ipv4(const char* str, uint8_t out[4]);
+ static bool parse_http_status_code(const char* response_buff, size_t response_buff_len, int* status_code);
+
 /* Authentication endpoint path - change to match server API. */
 #define AUTHENTICATE_PATH      "/authenticate"
+#define INVALIDATE_PATH        "/invalidate"
 //#define THINGS_BOARD_PATH "/api/v1/7wcW9bj7XnNCzxlGpDGV/telemetry"
-#define THINGS_BOARD_PATH "/api/v1/uddbe2i4Y9pWhWwwntGl/telemetry"
+// #define THINGS_BOARD_PATH "/api/v1/uddbe2i4Y9pWhWwwntGl/telemetry"
 #define HTTP_REQUEST_BUF_SIZE  1024U
 #define HTTP_SOCKET_NUM        0
 
@@ -139,6 +143,66 @@ static RemoteServerError https_authenticate(
 
     return result;
 }
+
+RemoteServerError remote_server_invalidate(
+    RemoteServerProtocol protocol,
+    const char* server_addr,
+    uint16_t server_port,
+    const char* json_payload,
+    size_t json_payload_len,
+    char* response_buff,
+    size_t response_buff_len,
+    int* bytes_read)
+{
+    unsigned char http_request[HTTP_REQUEST_BUF_SIZE];
+    uint8_t ip[4];
+    int header_len;
+
+    if (!server_addr || !json_payload || !response_buff || !bytes_read) {
+        return REMOTE_SERVER_NULL_PTR;
+    }
+    if (json_payload_len == 0U || response_buff_len == 0U) {
+        return REMOTE_SERVER_INVALID_LENGTH;
+    }
+
+    *bytes_read = 0;
+
+    /* Resolve server address: try IPv4 literal first, then DNS. */
+    if (!parse_ipv4(server_addr, ip)) {
+        if (!ethernet_dns_resolve(server_addr, ip)) {
+            return REMOTE_SERVER_SOCKET_ERROR;
+        }
+    }
+
+    /* Build the HTTP/1.1 POST request for /invalidate */
+    header_len = snprintf((char*)http_request, sizeof(http_request),
+        "POST " INVALIDATE_PATH " HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %u\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        server_addr,
+        (unsigned int)json_payload_len);
+
+    if (header_len < 0 ||
+        (size_t)header_len + json_payload_len >= sizeof(http_request)) {
+        return REMOTE_SERVER_INVALID_LENGTH;
+    }
+
+    memcpy(http_request + header_len, json_payload, json_payload_len);
+
+    if (protocol == REMOTE_SERVER_PROTO_HTTPS) {
+        return https_authenticate(ip, 4U, server_port,
+                                  http_request, (size_t)header_len + json_payload_len,
+                                  response_buff, response_buff_len, bytes_read);
+    }
+
+    return http_authenticate(ip, 4U, server_port,
+                             http_request, (size_t)header_len + json_payload_len,
+                             response_buff, response_buff_len, bytes_read);
+}
+
 
 /* ---------- Public API ---------- */
 
