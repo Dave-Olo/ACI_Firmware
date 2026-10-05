@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <string.h>
 #include "stm32f4xx_hal_gpio.h"
 #include "wiegand.h"
 #include <json_builder.h>
@@ -41,11 +42,11 @@
  * If a hostname is provided, DNS resolution is performed automatically. */
 // #define SERVER_ADDR     "192.168.0.102"
 //#define THINGS_BOARD_ADDR "http://iot.interswitch.com"
-#define SERVER_ADDR "https://aci-demo.onrender.com"
+#define SERVER_ADDR "aci-demo.onrender.com"  /* hostname only: no scheme, used for DNS, Host header, and TLS SNI */
 // #define THINGS_BOARD_ADDR "thingsboard.cloud"
 //#define THINGS_BOARD_PORT 8080U
 //#define THINGS_BOARD_PORT 80U
-#define SERVER_PORT     8443U
+#define SERVER_PORT     443U    /* Render exposes standard HTTPS port publicly; internal $PORT is irrelevant to clients */
 #define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTPS  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
 //#define SERVER_PROTOCOL REMOTE_SERVER_PROTO_HTTP  /* REMOTE_SERVER_PROTO_HTTP or REMOTE_SERVER_PROTO_HTTPS */
 
@@ -81,30 +82,7 @@ int __io_putchar(int ch) {
     return ch;
 }
 
-static void invalidate_access_code(const char* json_payload, size_t json_payload_len) {
-    if (json_payload != NULL && json_payload_len > 0) {
-        char inv_response[512];
-        int inv_bytes = 0;
-
-        RemoteServerError inv_err = remote_server_invalidate(
-            SERVER_PROTOCOL,
-            SERVER_ADDR,
-            SERVER_PORT,
-            json_payload,
-            json_payload_len,
-            inv_response,
-            sizeof(inv_response),
-            &inv_bytes);
-
-        if (inv_err != REMOTE_SERVER_OK) {
-            printf("Invalidate failed: error %d\r\n", (int)inv_err);
-        } else {
-            printf("Invalidate response (%d bytes): %s\r\n", inv_bytes, inv_response);
-            printf("Access code invalidated successfully\r\n");
-        }
-    }
-}
-static void grant_access(const char* json_payload, size_t json_payload_len)
+static void grant_access(void)
 {
     /* 1. Trigger success LED + Barrier */
     HAL_GPIO_WritePin(SUCCESS_PIN_GPIO_Port, SUCCESS_PIN_Pin, GPIO_PIN_SET);
@@ -173,17 +151,27 @@ while (1)
 {
     int access_result = 0;
     int json_len = 0;               /* will hold length of JSON payload */
+    WiegandKeyError wiegand_err;
+
+    /* Clear any PIN left over from a previous (possibly shorter) attempt
+     * before collecting a new one. */
+    memset(pin, 0, sizeof(pin));
+
+    /* Keep reading until a full, valid PIN is captured - a malformed read
+     * (bad framing, incomplete entry, etc.) should be retried, not treated
+     * as an access denial. */
+    do {
+        wiegand_err = collect_wiegand_keypress(pin, sizeof(pin));
+        if (wiegand_err != WIEGAND_OK) {
+            printf("error collecting pin: error code: %d\n", (int)wiegand_err);
+            memset(pin, 0, sizeof(pin));
+        }
+    } while (wiegand_err != WIEGAND_OK);
+
+    pin[DIGITS_REQUIRED] = '\0';
+    printf("Collected PIN: %s\r\n", pin);
 
     do {
-        WiegandKeyError error = collect_wiegand_keypress(pin, sizeof(pin));
-        if (error == WIEGAND_OK) {
-            pin[DIGITS_REQUIRED] = '\0';
-            printf("Collected PIN: %s\r\n", pin);
-        } else {
-            printf("error collecting pin: error code: %d\n", (int)error);
-            continue;
-        }
-
         json_len = build_json_from_pin(json_buffer, sizeof(json_buffer), pin, sizeof(pin));
         if (json_len < 0) {
             printf("could not create json payload\n");
@@ -221,10 +209,8 @@ while (1)
     } while (0);
 
     if (access_result) {
-        /* Barrier is triggered inside grant_access(), 
-       and invalidate is called immediately after the barrier pin goes high */
-        grant_access(json_buffer, (size_t)json_len);
-        invalidate_access_code(json_buffer, (size_t)json_len);  /* Invalidate after granting access */
+      /* /guest/validate marks the one-time guest PIN used before returning 200. */
+      grant_access();
       } else {
         deny_access();
     }

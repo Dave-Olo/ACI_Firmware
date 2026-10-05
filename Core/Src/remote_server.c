@@ -2,6 +2,7 @@
 #include "tls_manager.h"
 #include "ethernet_manager.h"
 #include "socket.h"
+#include "stm32f4xx_hal.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -9,12 +10,11 @@
  static bool parse_http_status_code(const char* response_buff, size_t response_buff_len, int* status_code);
 
 /* Authentication endpoint path - change to match server API. */
-#define AUTHENTICATE_PATH      "/authenticate"
+#define AUTHENTICATE_PATH      "/guest/validate"
 #define INVALIDATE_PATH        "/invalidate"
-//#define THINGS_BOARD_PATH "/api/v1/7wcW9bj7XnNCzxlGpDGV/telemetry"
-// #define THINGS_BOARD_PATH "/api/v1/uddbe2i4Y9pWhWwwntGl/telemetry"
 #define HTTP_REQUEST_BUF_SIZE  1024U
 #define HTTP_SOCKET_NUM        0
+#define HTTPS_RESPONSE_TIMEOUT_MS 10000U
 
 /* ---------- Plain HTTP (raw TCP) transport ---------- */
 
@@ -80,6 +80,7 @@ static RemoteServerError https_authenticate(
     const uint8_t* ip,
     size_t ip_len,
     uint16_t port,
+    const char* hostname,
     const unsigned char* request,
     size_t request_len,
     char* response_buff,
@@ -92,6 +93,7 @@ static RemoteServerError https_authenticate(
     int written;
     int chunk;
     size_t total_read = 0U;
+    uint32_t response_start;
     unsigned int close_status;
     RemoteServerError result = REMOTE_SERVER_OK;
 
@@ -100,7 +102,7 @@ static RemoteServerError https_authenticate(
         return REMOTE_SERVER_TLS_ERROR;
     }
 
-    tls_err = tls_manager_connect(&tls_ctx, ip, ip_len, port);
+    tls_err = tls_manager_connect(&tls_ctx, ip, ip_len, port, hostname);
     if (tls_err != TLS_MANAGER_OK) {
         tls_manager_deinit(&tls_ctx);
         return REMOTE_SERVER_TLS_ERROR;
@@ -117,7 +119,9 @@ static RemoteServerError https_authenticate(
         return REMOTE_SERVER_TLS_ERROR;
     }
 
-    /* Read response until the server closes the connection or the buffer is full. */
+    /* Wait through transient nonblocking reads; the server may not have
+     * produced the response by the time the first TLS read is attempted. */
+    response_start = HAL_GetTick();
     while (total_read < response_buff_len - 1U) {
         tls_err = tls_manager_read(
             &tls_ctx,
@@ -125,10 +129,21 @@ static RemoteServerError https_authenticate(
             (unsigned int)(response_buff_len - 1U - total_read),
             &chunk);
 
-        if (chunk <= 0) {
-            if (tls_err != TLS_MANAGER_OK) {
+        if (chunk == MBEDTLS_ERR_SSL_WANT_READ || chunk == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            if ((HAL_GetTick() - response_start) >= HTTPS_RESPONSE_TIMEOUT_MS) {
                 result = REMOTE_SERVER_TLS_ERROR;
+                break;
             }
+            HAL_Delay(1U);
+            continue;
+        }
+
+        if (chunk == 0 || chunk == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+            break;
+        }
+
+        if (chunk < 0 || tls_err != TLS_MANAGER_OK) {
+            result = REMOTE_SERVER_TLS_ERROR;
             break;
         }
 
@@ -193,7 +208,7 @@ RemoteServerError remote_server_invalidate(
     memcpy(http_request + header_len, json_payload, json_payload_len);
 
     if (protocol == REMOTE_SERVER_PROTO_HTTPS) {
-        return https_authenticate(ip, 4U, server_port,
+        return https_authenticate(ip, 4U, server_port, server_addr,
                                   http_request, (size_t)header_len + json_payload_len,
                                   response_buff, response_buff_len, bytes_read);
     }
@@ -341,7 +356,7 @@ RemoteServerError remote_server_authenticate(
     memcpy(http_request + header_len, json_payload, json_payload_len);
 
     if (protocol == REMOTE_SERVER_PROTO_HTTPS) {
-        return https_authenticate(ip, 4U, server_port,
+        return https_authenticate(ip, 4U, server_port, server_addr,
                                   http_request, (size_t)header_len + json_payload_len,
                                   response_buff, response_buff_len, bytes_read);
     }
@@ -351,57 +366,6 @@ RemoteServerError remote_server_authenticate(
                              response_buff, response_buff_len, bytes_read);
 }
 
-
-RemoteServerError remote_server_authenticate_thingsboard(const RemoteServerProtocol protocol, const char* server_addr, uint16_t server_port, const char* json_payload, size_t json_payload_len, char* response_buff, size_t response_buff_len, int* bytes_read){
- unsigned char http_request[HTTP_REQUEST_BUF_SIZE];
-    uint8_t ip[4];
-    int header_len;
-
-    if (!server_addr || !json_payload || !response_buff || !bytes_read) {
-        return REMOTE_SERVER_NULL_PTR;
-    }
-    if (json_payload_len == 0U || response_buff_len == 0U) {
-        return REMOTE_SERVER_INVALID_LENGTH;
-    }
-
-    *bytes_read = 0;
-
-    /* Resolve server address: try IPv4 literal first, then DNS. */
-    if (!parse_ipv4(server_addr, ip)) {
-        if (!ethernet_dns_resolve(server_addr, ip)) {
-            return REMOTE_SERVER_SOCKET_ERROR;
-        }
-    }
-
-    /* Build the HTTP/1.1 POST request. Use the original address string
-     * as the Host header (works for both IP and hostname). */
-    header_len = snprintf((char*)http_request, sizeof(http_request),
-        "POST " THINGS_BOARD_PATH " HTTP/1.1\r\n"
-        "Host: %s\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %u\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        server_addr,
-        (unsigned int)json_payload_len);
-
-    if (header_len < 0 ||
-        (size_t)header_len + json_payload_len >= sizeof(http_request)) {
-        return REMOTE_SERVER_INVALID_LENGTH;
-    }
-
-    memcpy(http_request + header_len, json_payload, json_payload_len);
-    
-    if (protocol == REMOTE_SERVER_PROTO_HTTPS) {
-        return https_authenticate(ip, 4U, server_port,
-                                  http_request, (size_t)header_len + json_payload_len,
-                                  response_buff, response_buff_len, bytes_read);
-    }
-
-    return http_authenticate(ip, 4U, server_port,
-                             http_request, (size_t)header_len + json_payload_len,
-                             response_buff, response_buff_len, bytes_read);
-}
 
 RemoteServerAuthResult remote_server_parse_auth_response(const char* response_buff, size_t response_buff_len){
     int http_status = 0;

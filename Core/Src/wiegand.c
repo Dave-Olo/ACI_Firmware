@@ -93,12 +93,17 @@ WiegandKeyError collect_wiegand_keypress(char* key_buffer, int buffer_size){
                 printf("Unsupported Wiegand format: %d bits\r\n", bit_count);
                 return WIEGAND_UNSUPPORTED_FORMAT;
             }
-            number_of_key_pressed++;
-            if(number_of_key_pressed > buffer_size) {
-                printf("ERROR: Buffer overflow. Too many key presses.\r\n");
-                return WIEGAND_BUFFER_OVERFLOW;
-            }
+
             if(wiegand_data == ENTER_KEY_AS_HASH){
+                /* Reject short/incomplete entries instead of sending a
+                 * stale/partial PIN to the backend. */
+                if (number_of_key_pressed != DIGITS_REQUIRED) {
+                    printf("\r\nIncomplete PIN (%d/%d digits) - resetting\r\n",
+                           number_of_key_pressed, DIGITS_REQUIRED);
+                    number_of_key_pressed = 0;
+                    key_buffer[0] = '\0';
+                    return WIEGAND_INVALID_KEY;
+                }
                 printf("\r\nCollected PIN: %s\r\n", key_buffer);
                 return WIEGAND_OK;
             }
@@ -106,10 +111,16 @@ WiegandKeyError collect_wiegand_keypress(char* key_buffer, int buffer_size){
                 number_of_key_pressed = 0;
                 key_buffer[0] = '\0';
                 printf("\r\n[Buffer Cleared]\r\n");
+                continue; /* control key, not a digit - do not store it */
+            }
+            if(number_of_key_pressed >= (buffer_size - 1)) {
+                printf("ERROR: Buffer overflow. Too many key presses.\r\n");
+                return WIEGAND_BUFFER_OVERFLOW;
             }
 
             printf("Key Pressed: %hu\r\n", (uint8_t)wiegand_data);
-            key_buffer[number_of_key_pressed - 1] = (char)('0' + wiegand_data);
+            key_buffer[number_of_key_pressed] = (char)('0' + wiegand_data);
+            number_of_key_pressed++;
         }
     }
 }

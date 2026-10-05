@@ -13,6 +13,7 @@
 
 #define DEFAULT_IP_ADDRESS_BUF_LENGTH 4U
 #define TLS_DEBUG_LEVEL 5
+#define TLS_HANDSHAKE_TIMEOUT_MS 10000U
 
 extern SPI_HandleTypeDef hspi1;
 
@@ -241,13 +242,12 @@ TlsManagerError tls_manager_deinit(wiz_tls_context* ctx)
     return TLS_MANAGER_OK;
 }
 
-TlsManagerError tls_manager_connect(wiz_tls_context* ctx, const uint8_t* server_ip_buff, size_t server_ip_buf_len, uint16_t server_port)
+TlsManagerError tls_manager_connect(wiz_tls_context* ctx, const uint8_t* server_ip_buff, size_t server_ip_buf_len, uint16_t server_port, const char* sni_hostname)
 {
     int ret;
     int sock_ret;
-    char hostname[16];
 
-    if (!ctx || !server_ip_buff || !ctx->ssl) {
+    if (!ctx || !server_ip_buff || !ctx->ssl || !sni_hostname) {
         return TLS_MANAGER_NULL_PTR;
     }
 
@@ -269,13 +269,23 @@ TlsManagerError tls_manager_connect(wiz_tls_context* ctx, const uint8_t* server_
         return TLS_MANAGER_TLS_ERROR;
     }
 
-    snprintf(hostname, sizeof(hostname), "%u.%u.%u.%u",
-             server_ip_buff[0], server_ip_buff[1], server_ip_buff[2], server_ip_buff[3]);
-    mbedtls_ssl_set_hostname(ctx->ssl, hostname);
+    /* SNI must be the real hostname, not the resolved IP, so the edge/proxy
+     * can route to the correct virtual host and present a matching cert. */
+    mbedtls_ssl_set_hostname(ctx->ssl, sni_hostname);
 
-    while ((ret = mbedtls_ssl_handshake(ctx->ssl)) != 0) {
-        if ((ret != MBEDTLS_ERR_SSL_WANT_READ) && (ret != MBEDTLS_ERR_SSL_WANT_WRITE)) {
-            return TLS_MANAGER_TLS_ERROR;
+    {
+        uint32_t handshake_start = HAL_GetTick();
+
+        while ((ret = mbedtls_ssl_handshake(ctx->ssl)) != 0) {
+            if ((ret != MBEDTLS_ERR_SSL_WANT_READ) && (ret != MBEDTLS_ERR_SSL_WANT_WRITE)) {
+                return TLS_MANAGER_TLS_ERROR;
+            }
+            /* tls_w5500_recv() is non-blocking, so without this deadline a
+             * peer that accepts the TCP connection but never completes the
+             * TLS handshake would spin this loop forever. */
+            if ((HAL_GetTick() - handshake_start) > TLS_HANDSHAKE_TIMEOUT_MS) {
+                return TLS_MANAGER_TLS_ERROR;
+            }
         }
     }
 

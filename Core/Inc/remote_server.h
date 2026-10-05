@@ -26,8 +26,4 @@ RemoteServerError remote_server_authenticate(RemoteServerProtocol protocol, cons
 RemoteServerError remote_server_invalidate(RemoteServerProtocol protocol, const char* server_addr, uint16_t server_port, const char* json_payload, size_t json_payload_len, char* response_buff, size_t response_buff_len,int* bytes_read);
 RemoteServerAuthResult remote_server_parse_auth_response(const char* response_buff, size_t response_buff_len);
 
-
-// demo for thingsboard.io
-RemoteServerError remote_server_authenticate_thingsboard(const RemoteServerProtocol protocol, const char* server_addr, uint16_t server_port, const char* json_payload, size_t json_payload_len, char* response_buff, size_t response_buff_len, int* bytes_read);
-
 #endif // __REMOTE_SERVER_H__

@@ -31,7 +31,7 @@ TlsManagerError tls_manager_init(wiz_tls_context* ctx, int* server_fd);
 
 TlsManagerError tls_manager_deinit(wiz_tls_context* ctx);
 
-TlsManagerError tls_manager_connect(wiz_tls_context* ctx, const uint8_t* server_ip_buff, size_t server_ip_buf_len, uint16_t server_port);
+TlsManagerError tls_manager_connect(wiz_tls_context* ctx, const uint8_t* server_ip_buff, size_t server_ip_buf_len, uint16_t server_port, const char* sni_hostname);
 
 TlsManagerError tls_manager_read(wiz_tls_context* ctx, unsigned char* read_buff, unsigned int read_len, int* bytes_read);
 
